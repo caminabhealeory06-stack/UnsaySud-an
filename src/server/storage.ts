@@ -24,6 +24,42 @@ export function resolveSafePath(rootDir: string, ...segments: string[]): string 
   return candidate;
 }
 
+export function checkJsonStorePermissions(filePath: string): void {
+  const dir = path.dirname(filePath);
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+  fs.accessSync(dir, fs.constants.R_OK | fs.constants.W_OK);
+  if (fs.existsSync(filePath)) {
+    fs.accessSync(filePath, fs.constants.R_OK | fs.constants.W_OK);
+  }
+}
+
+export function readJsonArrayStrict<T>(filePath: string): T[] {
+  checkJsonStorePermissions(filePath);
+  if (!fs.existsSync(filePath)) {
+    return [];
+  }
+  const raw = fs.readFileSync(filePath, "utf-8");
+  if (!raw.trim()) {
+    return [];
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (err: any) {
+    throw new Error(
+      `Database file ${path.basename(filePath)} contains invalid JSON: ${err?.message || "parse error"}`
+    );
+  }
+  if (!Array.isArray(parsed)) {
+    throw new Error(
+      `Database file ${path.basename(filePath)} has invalid format: expected a JSON array.`
+    );
+  }
+  return parsed as T[];
+}
+
 export function readJsonFile<T>(filePath: string, fallback: T): T {
   try {
     if (!fs.existsSync(filePath)) return fallback;
@@ -37,17 +73,24 @@ export function readJsonFile<T>(filePath: string, fallback: T): T {
 }
 
 export function writeJsonFile<T>(filePath: string, data: T): boolean {
+  const tmpPath = `${filePath}.tmp.${process.pid}.${Date.now()}`;
   try {
     const dir = path.dirname(filePath);
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
     }
-    const tmpPath = `${filePath}.tmp.${process.pid}.${Date.now()}`;
     fs.writeFileSync(tmpPath, JSON.stringify(data, null, 2), "utf-8");
     fs.renameSync(tmpPath, filePath);
     return true;
   } catch (err) {
     console.error(`Failed writing JSON file ${filePath}:`, err);
+    try {
+      if (fs.existsSync(tmpPath)) {
+        fs.unlinkSync(tmpPath);
+      }
+    } catch {
+      // ignore cleanup error
+    }
     return false;
   }
 }

@@ -795,6 +795,16 @@ export async function markNotificationsReadAPI(
 // ADMINISTRATOR PORTAL APIs
 // ============================================================================
 
+async function safeParseJsonResponse(res: Response): Promise<{ parsed: any | null; rawText: string }> {
+  const rawText = await res.text();
+  if (!rawText) return { parsed: null, rawText: '' };
+  try {
+    return { parsed: JSON.parse(rawText), rawText };
+  } catch {
+    return { parsed: null, rawText };
+  }
+}
+
 export async function fetchAdminBootstrapStatusAPI(): Promise<{
   success: boolean;
   initialized: boolean;
@@ -802,27 +812,82 @@ export async function fetchAdminBootstrapStatusAPI(): Promise<{
   error?: string;
 }> {
   try {
-    const res = await fetch('/api/admin/bootstrap-status', { cache: 'no-store' });
+    const res = await fetch('/api/admin/bootstrap-status', {
+      cache: 'no-store',
+      credentials: 'same-origin',
+      headers: { Accept: 'application/json' }
+    });
+    const { parsed, rawText } = await safeParseJsonResponse(res);
+
     if (!res.ok) {
+      const serverMsg = parsed && typeof parsed.error === 'string' ? parsed.error : null;
+      if (serverMsg) {
+        return {
+          success: false,
+          initialized: true,
+          envPasscodeConfigured: false,
+          error: `${serverMsg} (HTTP ${res.status})`
+        };
+      }
+      if (res.status === 404) {
+        return {
+          success: false,
+          initialized: true,
+          envPasscodeConfigured: false,
+          error: 'Super Admin status endpoint (/api/admin/bootstrap-status) was not found (HTTP 404). Verify the backend API server is running.'
+        };
+      }
       return {
         success: false,
         initialized: true,
         envPasscodeConfigured: false,
-        error: 'Unable to check Super Admin initialization status.'
+        error: `Unable to verify Super Admin initialization status (HTTP ${res.status}${res.statusText ? ` ${res.statusText}` : ''}).`
       };
     }
-    const data = await res.json();
+
+    if (!parsed || typeof parsed !== 'object') {
+      const looksLikeHtml = rawText.trim().toLowerCase().startsWith('<!doctype') || rawText.trim().toLowerCase().startsWith('<html');
+      return {
+        success: false,
+        initialized: true,
+        envPasscodeConfigured: false,
+        error: looksLikeHtml
+          ? 'The server returned HTML instead of JSON for /api/admin/bootstrap-status. Ensure the Express API server is handling /api routes.'
+          : 'The server returned an invalid non-JSON response for Super Admin initialization status.'
+      };
+    }
+
+    if (parsed.success === false) {
+      return {
+        success: false,
+        initialized: true,
+        envPasscodeConfigured: false,
+        error: parsed.error || 'Server failed to check Super Admin initialization status.'
+      };
+    }
+
+    if (typeof parsed.initialized !== 'boolean') {
+      return {
+        success: false,
+        initialized: true,
+        envPasscodeConfigured: false,
+        error: 'Incomplete Super Admin initialization status response from server.'
+      };
+    }
+
     return {
       success: true,
-      initialized: Boolean(data.initialized),
-      envPasscodeConfigured: Boolean(data.envPasscodeConfigured)
+      initialized: parsed.initialized,
+      envPasscodeConfigured: Boolean(parsed.envPasscodeConfigured)
     };
-  } catch {
+  } catch (err: any) {
     return {
       success: false,
       initialized: true,
       envPasscodeConfigured: false,
-      error: 'Network error checking Super Admin initialization status.'
+      error: err?.message
+        ? `Network error contacting backend for Super Admin status: ${err.message}`
+        : 'Network error contacting backend for Super Admin status.'
     };
   }
 }
@@ -843,23 +908,28 @@ export async function bootstrapAdminAPI(data: {
   try {
     const res = await fetch('/api/admin/bootstrap', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
       body: JSON.stringify(data)
     });
-    const result = await res.json();
+    const { parsed } = await safeParseJsonResponse(res);
     if (!res.ok) {
       return {
         success: false,
-        error: result.error || 'Admin initialization failed.',
-        alreadyInitialized: Boolean(result.alreadyInitialized)
+        error: parsed?.error || `Admin initialization failed (HTTP ${res.status}).`,
+        alreadyInitialized: Boolean(parsed?.alreadyInitialized)
       };
     }
-    if (result.token && result.admin) {
-      setAuthSession({ token: result.token, user: result.admin });
+    if (!parsed?.token || !parsed?.admin) {
+      return {
+        success: false,
+        error: 'Invalid response from server during Super Admin initialization.'
+      };
     }
-    return { success: true, admin: result.admin, token: result.token };
+    setAuthSession({ token: parsed.token, user: parsed.admin });
+    return { success: true, admin: parsed.admin, token: parsed.token };
   } catch (err: any) {
-    return { success: false, error: err.message || 'Network error.' };
+    return { success: false, error: err?.message || 'Network error during Super Admin initialization.' };
   }
 }
 
@@ -870,17 +940,21 @@ export async function adminLoginAPI(credentials: {
   try {
     const res = await fetch('/api/admin/login', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
       body: JSON.stringify(credentials)
     });
-    const data = await res.json();
-    if (!res.ok) return { success: false, error: data.error || 'Admin login failed' };
-    if (data.token && data.admin) {
-      setAuthSession({ token: data.token, user: data.admin });
+    const { parsed } = await safeParseJsonResponse(res);
+    if (!res.ok) {
+      return { success: false, error: parsed?.error || `Admin login failed (HTTP ${res.status}).` };
     }
-    return { success: true, admin: data.admin, token: data.token };
+    if (!parsed?.token || !parsed?.admin) {
+      return { success: false, error: 'Invalid response from server during admin sign-in.' };
+    }
+    setAuthSession({ token: parsed.token, user: parsed.admin });
+    return { success: true, admin: parsed.admin, token: parsed.token };
   } catch (err: any) {
-    return { success: false, error: err.message || 'Network error during admin login' };
+    return { success: false, error: err?.message || 'Network error during admin login.' };
   }
 }
 

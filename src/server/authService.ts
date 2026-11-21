@@ -2,7 +2,7 @@ import crypto from "crypto";
 import path from "path";
 import type { Request, Response, NextFunction } from "express";
 import type { AuthUser, UserAccountStatus, UserRole } from "../types";
-import { DATA_DIR, readJsonFile, writeJsonFile } from "./storage";
+import { DATA_DIR, readJsonArrayStrict, readJsonFile, writeJsonFile } from "./storage";
 
 export interface StoredUserRecord {
   id: string;
@@ -46,6 +46,10 @@ export function verifySecret(secret: string, hash: string, salt: string): boolea
   const b = Buffer.from(hash, "hex");
   if (a.length !== b.length) return false;
   return crypto.timingSafeEqual(a, b);
+}
+
+export function readUsersStrict(): StoredUserRecord[] {
+  return readJsonArrayStrict<StoredUserRecord>(USERS_FILE);
 }
 
 export function readUsers(): StoredUserRecord[] {
@@ -170,13 +174,22 @@ function timingSafeCompare(a: string, b: string): boolean {
   return crypto.timingSafeEqual(hashA, hashB);
 }
 
-export function getAdminBootstrapStatus(): { initialized: boolean; envPasscodeConfigured: boolean } {
-  const users = readUsers();
-  const hasAdmin = users.some((u) => u.role === "admin");
+function isAdminUser(user: StoredUserRecord | null | undefined): boolean {
+  return Boolean(user && typeof user === "object" && String(user.role || "").trim().toLowerCase() === "admin");
+}
+
+export function getAdminBootstrapStatus(): {
+  initialized: boolean;
+  envPasscodeConfigured: boolean;
+  databaseConnected: boolean;
+} {
+  const users = readUsersStrict();
+  const hasAdmin = users.some((u) => isAdminUser(u));
   const envPass = Boolean(process.env.ADMIN_PASSCODE && process.env.ADMIN_PASSCODE.trim().length > 0);
   return {
     initialized: hasAdmin,
-    envPasscodeConfigured: envPass
+    envPasscodeConfigured: envPass,
+    databaseConnected: true
   };
 }
 
@@ -193,9 +206,20 @@ export function bootstrapFirstAdmin(params: {
   error?: string;
   alreadyInitialized?: boolean;
   invalidPasscode?: boolean;
+  databaseError?: boolean;
 } {
-  const users = readUsers();
-  const existingAdmin = users.find((u) => u.role === "admin");
+  let users: StoredUserRecord[];
+  try {
+    users = readUsersStrict();
+  } catch (err: any) {
+    return {
+      success: false,
+      databaseError: true,
+      error: err?.message || "Unable to access users database for Super Admin initialization."
+    };
+  }
+
+  const existingAdmin = users.find((u) => isAdminUser(u));
   if (existingAdmin) {
     return {
       success: false,
@@ -240,8 +264,18 @@ export function bootstrapFirstAdmin(params: {
   }
 
   // Re-verify single-admin constraint immediately before persisting
-  const latestUsers = readUsers();
-  if (latestUsers.some((u) => u.role === "admin")) {
+  let latestUsers: StoredUserRecord[];
+  try {
+    latestUsers = readUsersStrict();
+  } catch (err: any) {
+    return {
+      success: false,
+      databaseError: true,
+      error: err?.message || "Unable to re-verify users database before saving Super Admin."
+    };
+  }
+
+  if (latestUsers.some((u) => isAdminUser(u))) {
     return {
       success: false,
       alreadyInitialized: true,
@@ -267,7 +301,15 @@ export function bootstrapFirstAdmin(params: {
   };
 
   latestUsers.push(newAdmin);
-  writeUsers(latestUsers);
+  const persisted = writeUsers(latestUsers);
+  if (!persisted) {
+    return {
+      success: false,
+      databaseError: true,
+      error: "Failed to save Super Administrator account to the users database. Check data directory write permissions."
+    };
+  }
+
   const pub = toPublicUser(newAdmin);
   return { success: true, admin: pub, token: signAuthToken(pub) };
 }
@@ -275,7 +317,7 @@ export function bootstrapFirstAdmin(params: {
 export function loginAdminAccount(params: {
   identifier?: string;
   password?: string;
-}): { success: boolean; admin?: AuthUser; token?: string; error?: string } {
+}): { success: boolean; admin?: AuthUser; token?: string; error?: string; databaseError?: boolean } {
   const identifier = (params.identifier || "").trim().toLowerCase();
   const password = params.password || "";
 
@@ -283,10 +325,20 @@ export function loginAdminAccount(params: {
     return { success: false, error: "Administrator username/email and password are required." };
   }
 
-  const users = readUsers();
+  let users: StoredUserRecord[];
+  try {
+    users = readUsersStrict();
+  } catch (err: any) {
+    return {
+      success: false,
+      databaseError: true,
+      error: err?.message || "Unable to read users database during administrator sign-in."
+    };
+  }
+
   const idx = users.findIndex(
     (u) =>
-      u.role === "admin" &&
+      isAdminUser(u) &&
       (u.username.toLowerCase() === identifier || u.email.toLowerCase() === identifier)
   );
 
@@ -313,7 +365,9 @@ export function loginAdminAccount(params: {
   users[idx].lastLoginAt = now;
   users[idx].loginCount = (users[idx].loginCount || 0) + 1;
   users[idx].updatedAt = now;
-  writeUsers(users);
+  if (!writeUsers(users)) {
+    console.warn("Admin login succeeded, but failed to update lastLoginAt in users.json.");
+  }
 
   const pub = toPublicUser(users[idx]);
   return { success: true, admin: pub, token: signAuthToken(pub) };

@@ -132,6 +132,8 @@ export const AdminSubscriptionDashboard: React.FC<AdminSubscriptionDashboardProp
   useEffect(() => {
     if (currentAdmin) return;
     let active = true;
+    setBootstrapChecked(false);
+    setStatusError(null);
     fetchAdminBootstrapStatusAPI().then((status) => {
       if (!active) return;
       if (status.success) {

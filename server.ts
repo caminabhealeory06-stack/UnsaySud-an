@@ -1,3 +1,4 @@
+import "dotenv/config";
 import express from "express";
 import path from "path";
 import fs from "fs";
@@ -272,39 +273,75 @@ async function startServer() {
     res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
     res.setHeader("Pragma", "no-cache");
     res.setHeader("Expires", "0");
-    res.json({ success: true, ...getAdminBootstrapStatus() });
+    try {
+      const status = getAdminBootstrapStatus();
+      return res.json({ success: true, ...status });
+    } catch (err: any) {
+      console.error("Failed to check Super Admin initialization status:", err);
+      return res.status(500).json({
+        success: false,
+        error:
+          err?.message ||
+          "Database error while checking Super Admin initialization status."
+      });
+    }
   });
 
   app.post("/api/admin/bootstrap", (req, res) => {
-    const { name, username, email, password, passcode } = req.body || {};
-    const result = bootstrapFirstAdmin({ name, username, email, password, passcode });
-    if (!result.success || !result.admin || !result.token) {
-      const status = result.alreadyInitialized || result.invalidPasscode ? 403 : 400;
-      return res.status(status).json({
-        error: result.error || "Failed to initialize administrator.",
-        alreadyInitialized: Boolean(result.alreadyInitialized)
+    try {
+      const { name, username, email, password, passcode } = req.body || {};
+      const result = bootstrapFirstAdmin({ name, username, email, password, passcode });
+      if (!result.success || !result.admin || !result.token) {
+        const status = result.databaseError
+          ? 500
+          : result.alreadyInitialized || result.invalidPasscode
+          ? 403
+          : 400;
+        return res.status(status).json({
+          success: false,
+          error: result.error || "Failed to initialize administrator.",
+          alreadyInitialized: Boolean(result.alreadyInitialized)
+        });
+      }
+      recordRegistrationEvent(result.admin.id, "admin");
+      logAuditAction(
+        "update_settings",
+        result.admin.username,
+        "Administrator Account",
+        `Initialized primary platform administrator account (${result.admin.username})`,
+        undefined,
+        { targetType: "user", targetUserId: result.admin.id, previousStatus: "none", newStatus: "active" }
+      );
+      return res.json({ success: true, admin: result.admin, token: result.token });
+    } catch (err: any) {
+      console.error("Super Admin bootstrap error:", err);
+      return res.status(500).json({
+        success: false,
+        error: err?.message || "Server error while initializing Super Administrator account."
       });
     }
-    recordRegistrationEvent(result.admin.id, "admin");
-    logAuditAction(
-      "update_settings",
-      result.admin.username,
-      "Administrator Account",
-      `Initialized primary platform administrator account (${result.admin.username})`,
-      undefined,
-      { targetType: "user", targetUserId: result.admin.id, previousStatus: "none", newStatus: "active" }
-    );
-    return res.json({ success: true, admin: result.admin, token: result.token });
   });
 
   app.post("/api/admin/login", (req, res) => {
-    const { identifier, password } = req.body;
-    const result = loginAdminAccount({ identifier, password });
-    if (!result.success || !result.admin || !result.token) {
-      return res.status(401).json({ error: result.error || "Invalid administrator credentials." });
+    try {
+      const { identifier, password } = req.body || {};
+      const result = loginAdminAccount({ identifier, password });
+      if (!result.success || !result.admin || !result.token) {
+        const status = result.databaseError ? 500 : 401;
+        return res.status(status).json({
+          success: false,
+          error: result.error || "Invalid administrator credentials."
+        });
+      }
+      recordUserLoginEvent(result.admin.id, "admin");
+      return res.json({ success: true, admin: result.admin, token: result.token });
+    } catch (err: any) {
+      console.error("Admin login error:", err);
+      return res.status(500).json({
+        success: false,
+        error: err?.message || "Server error during administrator sign-in."
+      });
     }
-    recordUserLoginEvent(result.admin.id, "admin");
-    return res.json({ success: true, admin: result.admin, token: result.token });
   });
 
   app.get("/api/admin/analytics", requireRole("admin"), (req, res) => {
@@ -2283,10 +2320,99 @@ async function startServer() {
   });
 
   // ==========================================================================
-  // VITE MIDDLEWARE & STATIC FALLBACK
+  // API 404 JSON FALLBACK + VITE MIDDLEWARE & STATIC FALLBACK
   // ==========================================================================
 
+  app.use("/api", (_req, res) => {
+    res.status(404).json({ success: false, error: "API endpoint not found." });
+  });
+
   if (process.env.NODE_ENV !== "production") {
+    if (process.env.DISABLE_HMR === "true") {
+      // Vite 8 injects /@vite/client in middlewareMode even when server.hmr is false,
+      // which attempts a WebSocket connection to port 24678 and throws
+      // "[vite] Error: WebSocket closed without opened." behind the proxy.
+      // Serve a lightweight ESM client shim that preserves CSS injection and
+      // import.meta.hot APIs without opening any WebSocket.
+      app.get("/@vite/client", (_req, res) => {
+        res.setHeader("Content-Type", "application/javascript; charset=utf-8");
+        res.setHeader("Cache-Control", "no-store");
+        res.send(`
+const sheetsMap = new Map();
+const linkSheetsMap = new Map();
+if ("document" in globalThis) {
+  document.querySelectorAll("style[data-vite-dev-id]").forEach((el) => {
+    sheetsMap.set(el.getAttribute("data-vite-dev-id"), el);
+  });
+  document.querySelectorAll('link[rel="stylesheet"][data-vite-dev-id]').forEach((el) => {
+    linkSheetsMap.set(el.getAttribute("data-vite-dev-id"), el);
+  });
+}
+let lastInsertedStyle;
+export function updateStyle(id, content) {
+  if (linkSheetsMap.has(id)) return;
+  let style = sheetsMap.get(id);
+  if (!style) {
+    style = document.createElement("style");
+    style.setAttribute("type", "text/css");
+    style.setAttribute("data-vite-dev-id", id);
+    style.textContent = content;
+    if (!lastInsertedStyle) {
+      document.head.appendChild(style);
+      setTimeout(() => {
+        lastInsertedStyle = void 0;
+      }, 0);
+    } else {
+      lastInsertedStyle.insertAdjacentElement("afterend", style);
+    }
+    lastInsertedStyle = style;
+  } else if (style.textContent !== content) {
+    style.textContent = content;
+  }
+  sheetsMap.set(id, style);
+}
+export function removeStyle(id) {
+  if (linkSheetsMap.has(id)) {
+    document.querySelectorAll(\`link[rel="stylesheet"][data-vite-dev-id="\${CSS.escape(id)}"]\`).forEach((el) => el.remove());
+    linkSheetsMap.delete(id);
+  }
+  const style = sheetsMap.get(id);
+  if (style) {
+    document.head.removeChild(style);
+    sheetsMap.delete(id);
+  }
+}
+export function createHotContext() {
+  const noop = () => {};
+  return {
+    data: {},
+    accept: noop,
+    acceptExports: noop,
+    dispose: noop,
+    prune: noop,
+    decline: noop,
+    invalidate: noop,
+    on: noop,
+    off: noop,
+    send: noop
+  };
+}
+export function injectQuery(url, queryToInject) {
+  if (url[0] !== "." && url[0] !== "/") return url;
+  const pathname = url.replace(/[?#].*$/, "");
+  const { search, hash } = new URL(url, "http://vite.dev");
+  return \`\${pathname}?\${queryToInject}\${search ? "&" + search.slice(1) : ""}\${hash || ""}\`;
+}
+const BaseElement = typeof HTMLElement !== "undefined" ? HTMLElement : class {};
+export class ErrorOverlay extends BaseElement {
+  close() {
+    this.parentNode?.removeChild(this);
+  }
+}
+`);
+      });
+    }
+
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa"
