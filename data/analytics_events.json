@@ -1,1 +1,16 @@
-[]
+[
+  {
+    "id": "evt_995e5028d57c",
+    "timestamp": "2026-11-21T02:50:24.714Z",
+    "type": "login",
+    "userId": "admin_super_101",
+    "role": "admin"
+  },
+  {
+    "id": "evt_bae4ed789aa4",
+    "timestamp": "2026-11-21T02:51:06.101Z",
+    "type": "login",
+    "userId": "admin_super_101",
+    "role": "admin"
+  }
+]

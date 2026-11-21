@@ -1,1 +1,16 @@
-[]
+[
+  {
+    "id": "admin_super_101",
+    "name": "Super Administrator",
+    "email": "admin101@oursudan.ph",
+    "username": "admin101",
+    "role": "admin",
+    "status": "active",
+    "passwordHash": "42f394ebcfade4685acc9aa53bc6eb1f4fc73dafb2ceef14bb5068eada6f50c4aa42b007dee303fbe5ab5776964d6a2857b6723ab81fcb5abe818d70df9c3ffa",
+    "passwordSalt": "2987370ce08f57b0b4053ef84e133f08",
+    "createdAt": "2026-11-21T02:50:00.441Z",
+    "updatedAt": "2026-11-21T02:51:06.100Z",
+    "loginCount": 2,
+    "lastLoginAt": "2026-11-21T02:51:06.100Z"
+  }
+]
