@@ -1,0 +1,25 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "vite",
+  "buildCommand": "vite build",
+  "outputDirectory": "dist",
+  "functions": {
+    "api/index.ts": {
+      "includeFiles": "{data/**,public/uploads/**}"
+    }
+  },
+  "rewrites": [
+    {
+      "source": "/api/(.*)",
+      "destination": "/api"
+    },
+    {
+      "source": "/uploads/(.*)",
+      "destination": "/api"
+    },
+    {
+      "source": "/((?!api/|assets/|uploads/|favicon\\.ico|icon\\.svg|apple-touch-icon\\.png|pwa-|manifest\\.webmanifest|sw\\.js|workbox-).*)",
+      "destination": "/index.html"
+    }
+  ]
+}

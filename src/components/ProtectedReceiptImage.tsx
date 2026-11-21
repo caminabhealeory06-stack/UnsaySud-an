@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Receipt, AlertCircle, Loader2 } from 'lucide-react';
 import { getAuthHeaders } from '../utils/authStore';
+import { apiUrl } from '../services/api';
 
 interface ProtectedReceiptImageProps {
   src: string;
@@ -38,7 +39,7 @@ export const ProtectedReceiptImage: React.FC<ProtectedReceiptImageProps> = ({
       setError(false);
 
       try {
-        const res = await fetch(src, {
+        const res = await fetch(apiUrl(src), {
           headers: {
             ...getAuthHeaders()
           }

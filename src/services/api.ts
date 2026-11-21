@@ -45,6 +45,13 @@ export interface CampusTemplate {
   isRegistered: boolean;
 }
 
+const API_BASE = ((import.meta as any).env?.VITE_API_BASE_URL || '').replace(/\/+$/, '');
+
+export function apiUrl(endpoint: string): string {
+  if (!API_BASE || /^https?:\/\//i.test(endpoint)) return endpoint;
+  return `${API_BASE}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
+}
+
 function authJsonHeaders(): Record<string, string> {
   return {
     'Content-Type': 'application/json',
@@ -61,7 +68,7 @@ export async function fetchMenuData(
     if (role) params.set('role', role);
     if (stallName) params.set('stall', stallName);
     const qs = params.toString() ? `?${params.toString()}` : '';
-    const res = await fetch(`/api/menu${qs}`, {
+    const res = await fetch(apiUrl(`/api/menu${qs}`), {
       headers: getAuthHeaders()
     });
     if (!res.ok) throw new Error('Failed to load menu data');
@@ -78,7 +85,7 @@ export async function fetchMenuData(
 
 export async function fetchCampusStallTemplatesAPI(): Promise<CampusTemplate[]> {
   try {
-    const res = await fetch('/api/stalls/templates');
+    const res = await fetch(apiUrl('/api/stalls/templates'));
     if (!res.ok) return [];
     const data = await res.json();
     return data.templates || [];
@@ -89,7 +96,7 @@ export async function fetchCampusStallTemplatesAPI(): Promise<CampusTemplate[]> 
 
 export async function checkMenuVersionAPI(): Promise<number | null> {
   try {
-    const res = await fetch('/api/menu/version');
+    const res = await fetch(apiUrl('/api/menu/version'));
     if (!res.ok) return null;
     const data = await res.json();
     return data.version || null;
@@ -105,7 +112,7 @@ export async function saveItemPhotoAPI(
   remove = false
 ): Promise<{ success: boolean; item?: DishItem; imageUrl?: string; error?: string; message?: string }> {
   try {
-    const res = await fetch(`/api/menu/${dishId}/photo`, {
+    const res = await fetch(apiUrl(`/api/menu/${dishId}/photo`), {
       method: 'POST',
       headers: authJsonHeaders(),
       body: JSON.stringify({ stall: stallName, dataUrl, remove })
@@ -131,7 +138,7 @@ export async function updateMenuItemAPI(
   updates: Partial<DishItem>
 ): Promise<{ success: boolean; item?: DishItem; error?: string }> {
   try {
-    const res = await fetch(`/api/menu/${dishId}/update`, {
+    const res = await fetch(apiUrl(`/api/menu/${dishId}/update`), {
       method: 'POST',
       headers: authJsonHeaders(),
       body: JSON.stringify({ stall: stallName, updates })
@@ -148,7 +155,7 @@ export async function syncRestoredPhotosAPI(
   photos: { id: number; stall: string; imageUrl: string }[]
 ): Promise<{ success: boolean; updatedCount?: number }> {
   try {
-    const res = await fetch('/api/menu/sync-photos', {
+    const res = await fetch(apiUrl('/api/menu/sync-photos'), {
       method: 'POST',
       headers: authJsonHeaders(),
       body: JSON.stringify({ photos })
@@ -165,7 +172,7 @@ export async function addMenuItemAPI(
   item: Omit<DishItem, 'id' | 'clicks'>
 ): Promise<{ success: boolean; item?: DishItem; error?: string }> {
   try {
-    const res = await fetch('/api/menu/add', {
+    const res = await fetch(apiUrl('/api/menu/add'), {
       method: 'POST',
       headers: authJsonHeaders(),
       body: JSON.stringify({ stall: stallName, item })
@@ -180,7 +187,7 @@ export async function addMenuItemAPI(
 
 export async function toggleItemStockAPI(id: number, stallName: string): Promise<DishItem | null> {
   try {
-    const res = await fetch(`/api/menu/${id}/toggle-stock`, {
+    const res = await fetch(apiUrl(`/api/menu/${id}/toggle-stock`), {
       method: 'POST',
       headers: authJsonHeaders(),
       body: JSON.stringify({ stall: stallName })
@@ -199,7 +206,7 @@ export async function updateItemPriceAPI(
   stallName: string
 ): Promise<DishItem | null> {
   try {
-    const res = await fetch(`/api/menu/${id}/price`, {
+    const res = await fetch(apiUrl(`/api/menu/${id}/price`), {
       method: 'POST',
       headers: authJsonHeaders(),
       body: JSON.stringify({ delta, stall: stallName })
@@ -214,7 +221,7 @@ export async function updateItemPriceAPI(
 
 export async function saveStallNoticeAPI(stallName: string, notice: string): Promise<boolean> {
   try {
-    const res = await fetch('/api/stalls/notice', {
+    const res = await fetch(apiUrl('/api/stalls/notice'), {
       method: 'POST',
       headers: authJsonHeaders(),
       body: JSON.stringify({ stall: stallName, notice })
@@ -227,7 +234,7 @@ export async function saveStallNoticeAPI(stallName: string, notice: string): Pro
 
 export async function recordItemClickAPI(id: number): Promise<void> {
   try {
-    await fetch(`/api/menu/${id}/click`, { method: 'POST' });
+    await fetch(apiUrl(`/api/menu/${id}/click`), { method: 'POST' });
   } catch {
     // non-blocking
   }
@@ -246,7 +253,7 @@ export async function verifyStallLoginAPI(
   pin: string
 ): Promise<{ success: boolean; owner?: StallOwnerAccount; token?: string; error?: string }> {
   try {
-    const res = await fetch('/api/stalls/login', {
+    const res = await fetch(apiUrl('/api/stalls/login'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ stall, pin })
@@ -295,7 +302,7 @@ export async function registerStallOwnerAPI(data: {
   error?: string;
 }> {
   try {
-    const res = await fetch('/api/auth/register', {
+    const res = await fetch(apiUrl('/api/auth/register'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data)
@@ -335,7 +342,7 @@ export async function loginStallOwnerAPI(credentials: {
   pin?: string;
 }): Promise<{ success: boolean; owner?: StallOwnerAccount; token?: string; error?: string }> {
   try {
-    const res = await fetch('/api/auth/login', {
+    const res = await fetch(apiUrl('/api/auth/login'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(credentials)
@@ -375,7 +382,7 @@ export async function forgotPasswordAPI(data: {
   newPassword: string;
 }): Promise<{ success: boolean; message?: string; error?: string }> {
   try {
-    const res = await fetch('/api/auth/forgot-password', {
+    const res = await fetch(apiUrl('/api/auth/forgot-password'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data)
@@ -398,7 +405,7 @@ export async function updateProfileAPI(data: {
   newPin?: string;
 }): Promise<{ success: boolean; owner?: StallOwnerAccount; message?: string; error?: string }> {
   try {
-    const res = await fetch('/api/auth/update-profile', {
+    const res = await fetch(apiUrl('/api/auth/update-profile'), {
       method: 'POST',
       headers: authJsonHeaders(),
       body: JSON.stringify(data)
@@ -421,7 +428,7 @@ export async function recordSessionVisitAPI(
   mode: 'online' | 'offline' = 'online'
 ): Promise<boolean> {
   try {
-    const res = await fetch('/api/analytics/session', {
+    const res = await fetch(apiUrl('/api/analytics/session'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ visitorId, portal, mode })
@@ -445,7 +452,7 @@ export async function flushOfflineAnalyticsAPI(
 ): Promise<boolean> {
   if (!offlineEvents || offlineEvents.length === 0) return true;
   try {
-    const res = await fetch('/api/analytics/session', {
+    const res = await fetch(apiUrl('/api/analytics/session'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ offlineEvents })
@@ -458,7 +465,7 @@ export async function flushOfflineAnalyticsAPI(
 
 export async function recordStallViewAPI(stallName: string, visitorId: string): Promise<void> {
   try {
-    await fetch('/api/analytics/stall-view', {
+    await fetch(apiUrl('/api/analytics/stall-view'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ stallName, visitorId })
@@ -475,7 +482,7 @@ export async function recordItemViewAPI(
   visitorId: string
 ): Promise<void> {
   try {
-    await fetch('/api/analytics/item-view', {
+    await fetch(apiUrl('/api/analytics/item-view'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ stallName, dishId, dishName, visitorId })
@@ -491,7 +498,7 @@ export async function fetchStallAnalyticsAPI(
 ): Promise<StallAnalyticsData | null> {
   try {
     const res = await fetch(
-      `/api/analytics/${encodeURIComponent(stallName)}?period=${period}`,
+      apiUrl(`/api/analytics/${encodeURIComponent(stallName)}?period=${period}`),
       { headers: getAuthHeaders() }
     );
     if (!res.ok) return null;
@@ -511,7 +518,7 @@ export async function deleteMenuItemSafelyAPI(
   deleteImagePermanently = false
 ): Promise<{ success: boolean; message?: string; error?: string }> {
   try {
-    const res = await fetch(`/api/menu/${dishId}/delete`, {
+    const res = await fetch(apiUrl(`/api/menu/${dishId}/delete`), {
       method: 'POST',
       headers: authJsonHeaders(),
       body: JSON.stringify({ stall: stallName, deleteImagePermanently })
@@ -528,7 +535,7 @@ export async function fetchStallPhotoVaultAPI(
   stallName: string
 ): Promise<{ success: boolean; protectedImages?: any[]; archivedDishes?: any[]; error?: string }> {
   try {
-    const res = await fetch(`/api/menu/photo-vault/${encodeURIComponent(stallName)}`, {
+    const res = await fetch(apiUrl(`/api/menu/photo-vault/${encodeURIComponent(stallName)}`), {
       headers: getAuthHeaders()
     });
     if (!res.ok) throw new Error('Failed to fetch photo vault');
@@ -543,7 +550,7 @@ export async function restoreArchivedDishAPI(
   stallName: string
 ): Promise<{ success: boolean; item?: DishItem; error?: string }> {
   try {
-    const res = await fetch('/api/menu/restore-dish', {
+    const res = await fetch(apiUrl('/api/menu/restore-dish'), {
       method: 'POST',
       headers: authJsonHeaders(),
       body: JSON.stringify({ archiveId, stall: stallName })
@@ -569,7 +576,7 @@ export async function saveMenuBatchAPI(
   error?: string;
 }> {
   try {
-    const res = await fetch('/api/menu/save-batch', {
+    const res = await fetch(apiUrl('/api/menu/save-batch'), {
       method: 'POST',
       headers: authJsonHeaders(),
       body: JSON.stringify({ stall: stallName, items, deletedItemIds, summary })
@@ -591,7 +598,7 @@ export async function fetchMenuVersionsAPI(
   stallName: string
 ): Promise<{ success: boolean; versions?: MenuVersionSnapshot[]; error?: string }> {
   try {
-    const res = await fetch(`/api/menu/versions/${encodeURIComponent(stallName)}`, {
+    const res = await fetch(apiUrl(`/api/menu/versions/${encodeURIComponent(stallName)}`), {
       headers: getAuthHeaders()
     });
     if (!res.ok) throw new Error('Failed to fetch versions');
@@ -613,7 +620,7 @@ export async function restoreMenuVersionAPI(
   error?: string;
 }> {
   try {
-    const res = await fetch('/api/menu/versions/restore', {
+    const res = await fetch(apiUrl('/api/menu/versions/restore'), {
       method: 'POST',
       headers: authJsonHeaders(),
       body: JSON.stringify({ stall: stallName, versionId })
@@ -641,7 +648,7 @@ export async function fetchSubscriptionSettingsAPI(): Promise<{
   error?: string;
 }> {
   try {
-    const res = await fetch('/api/subscription/settings');
+    const res = await fetch(apiUrl('/api/subscription/settings'));
     const data = await res.json();
     if (!res.ok) return { success: false, error: data.error || 'Failed to fetch settings' };
     return { success: true, settings: data.settings };
@@ -654,7 +661,7 @@ export async function fetchSubscriptionStatusAPI(
   stallName: string
 ): Promise<SubscriptionStatusResponse> {
   try {
-    const res = await fetch(`/api/subscription/status/${encodeURIComponent(stallName)}`, {
+    const res = await fetch(apiUrl(`/api/subscription/status/${encodeURIComponent(stallName)}`), {
       headers: getAuthHeaders()
     });
     const data = await res.json();
@@ -698,7 +705,7 @@ export async function startFreeTrialAPI(stallName: string): Promise<{
   error?: string;
 }> {
   try {
-    const res = await fetch('/api/subscription/start-trial', {
+    const res = await fetch(apiUrl('/api/subscription/start-trial'), {
       method: 'POST',
       headers: authJsonHeaders(),
       body: JSON.stringify({ stallName })
@@ -722,7 +729,7 @@ export async function submitSubscriptionPaymentAPI(paymentData: {
   resubmitPaymentId?: string;
 }): Promise<{ success: boolean; message?: string; payment?: PaymentRecord; error?: string }> {
   try {
-    const res = await fetch('/api/subscription/submit-payment', {
+    const res = await fetch(apiUrl('/api/subscription/submit-payment'), {
       method: 'POST',
       headers: authJsonHeaders(),
       body: JSON.stringify(paymentData)
@@ -741,7 +748,7 @@ export async function fetchStallPaymentsAPI(stallName: string): Promise<{
   error?: string;
 }> {
   try {
-    const res = await fetch(`/api/subscription/payments/${encodeURIComponent(stallName)}`, {
+    const res = await fetch(apiUrl(`/api/subscription/payments/${encodeURIComponent(stallName)}`), {
       headers: getAuthHeaders()
     });
     const data = await res.json();
@@ -759,7 +766,7 @@ export async function fetchNotificationsAPI(): Promise<{
   error?: string;
 }> {
   try {
-    const res = await fetch('/api/notifications', {
+    const res = await fetch(apiUrl('/api/notifications'), {
       headers: getAuthHeaders()
     });
     const data = await res.json();
@@ -779,7 +786,7 @@ export async function markNotificationsReadAPI(
   markAll = false
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    const res = await fetch('/api/notifications/mark-read', {
+    const res = await fetch(apiUrl('/api/notifications/mark-read'), {
       method: 'POST',
       headers: authJsonHeaders(),
       body: JSON.stringify({ notificationId, markAll })
@@ -812,7 +819,7 @@ export async function fetchAdminBootstrapStatusAPI(): Promise<{
   error?: string;
 }> {
   try {
-    const res = await fetch('/api/admin/bootstrap-status', {
+    const res = await fetch(apiUrl('/api/admin/bootstrap-status'), {
       cache: 'no-store',
       credentials: 'same-origin',
       headers: { Accept: 'application/json' }
@@ -906,7 +913,7 @@ export async function bootstrapAdminAPI(data: {
   alreadyInitialized?: boolean;
 }> {
   try {
-    const res = await fetch('/api/admin/bootstrap', {
+    const res = await fetch(apiUrl('/api/admin/bootstrap'), {
       method: 'POST',
       credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
@@ -938,7 +945,7 @@ export async function adminLoginAPI(credentials: {
   password: string;
 }): Promise<{ success: boolean; admin?: AuthUser; token?: string; error?: string }> {
   try {
-    const res = await fetch('/api/admin/login', {
+    const res = await fetch(apiUrl('/api/admin/login'), {
       method: 'POST',
       credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
@@ -969,7 +976,7 @@ export async function fetchAdminSummaryAPI(): Promise<{
   error?: string;
 }> {
   try {
-    const res = await fetch('/api/admin/summary', { headers: getAuthHeaders() });
+    const res = await fetch(apiUrl('/api/admin/summary'), { headers: getAuthHeaders() });
     const data = await res.json();
     if (!res.ok) return { success: false, error: data.error };
     return data;
@@ -989,7 +996,7 @@ export async function fetchAdminAnalyticsAPI(
       params.set('startDate', startDate);
       params.set('endDate', endDate);
     }
-    const res = await fetch(`/api/admin/analytics?${params.toString()}`, {
+    const res = await fetch(apiUrl(`/api/admin/analytics?${params.toString()}`), {
       headers: getAuthHeaders()
     });
     const data = await res.json();
@@ -1012,7 +1019,7 @@ export async function adminVerifyPaymentAPI(
   error?: string;
 }> {
   try {
-    const res = await fetch(`/api/admin/payments/${paymentId}/verify`, {
+    const res = await fetch(apiUrl(`/api/admin/payments/${paymentId}/verify`), {
       method: 'POST',
       headers: authJsonHeaders(),
       body: JSON.stringify({
@@ -1036,7 +1043,7 @@ export async function adminManualAccessAPI(params: {
   reason?: string;
 }): Promise<{ success: boolean; message?: string; subscription?: UserSubscription; error?: string }> {
   try {
-    const res = await fetch('/api/admin/manual-access', {
+    const res = await fetch(apiUrl('/api/admin/manual-access'), {
       method: 'POST',
       headers: authJsonHeaders(),
       body: JSON.stringify(params)
@@ -1055,7 +1062,7 @@ export async function fetchAdminStallsAPI(): Promise<{
   error?: string;
 }> {
   try {
-    const res = await fetch('/api/admin/stalls', { headers: getAuthHeaders() });
+    const res = await fetch(apiUrl('/api/admin/stalls'), { headers: getAuthHeaders() });
     const data = await res.json();
     if (!res.ok) return { success: false, error: data.error };
     return data;
@@ -1073,7 +1080,7 @@ export async function fetchAdminStallDetailsAPI(stallName: string): Promise<{
   error?: string;
 }> {
   try {
-    const res = await fetch(`/api/admin/stalls/${encodeURIComponent(stallName)}/details`, {
+    const res = await fetch(apiUrl(`/api/admin/stalls/${encodeURIComponent(stallName)}/details`), {
       headers: getAuthHeaders()
     });
     const data = await res.json();
@@ -1090,7 +1097,7 @@ export async function adminUpdateStallStatusAPI(
   reason?: string
 ): Promise<{ success: boolean; stall?: StallRecord; error?: string }> {
   try {
-    const res = await fetch(`/api/admin/stalls/${encodeURIComponent(stallName)}/status`, {
+    const res = await fetch(apiUrl(`/api/admin/stalls/${encodeURIComponent(stallName)}/status`), {
       method: 'POST',
       headers: authJsonHeaders(),
       body: JSON.stringify({ action, reason })
@@ -1109,7 +1116,7 @@ export async function fetchAdminUsersAPI(): Promise<{
   error?: string;
 }> {
   try {
-    const res = await fetch('/api/admin/users', { headers: getAuthHeaders() });
+    const res = await fetch(apiUrl('/api/admin/users'), { headers: getAuthHeaders() });
     const data = await res.json();
     if (!res.ok) return { success: false, error: data.error };
     return data;
@@ -1124,7 +1131,7 @@ export async function adminUpdateUserStatusAPI(
   reason?: string
 ): Promise<{ success: boolean; user?: AuthUser; error?: string }> {
   try {
-    const res = await fetch(`/api/admin/users/${encodeURIComponent(userId)}/status`, {
+    const res = await fetch(apiUrl(`/api/admin/users/${encodeURIComponent(userId)}/status`), {
       method: 'POST',
       headers: authJsonHeaders(),
       body: JSON.stringify({ status, reason })
@@ -1142,7 +1149,7 @@ export async function adminUpdateUserRoleAPI(
   role: 'customer' | 'merchant'
 ): Promise<{ success: boolean; user?: AuthUser; error?: string }> {
   try {
-    const res = await fetch(`/api/admin/users/${encodeURIComponent(userId)}/role`, {
+    const res = await fetch(apiUrl(`/api/admin/users/${encodeURIComponent(userId)}/role`), {
       method: 'POST',
       headers: authJsonHeaders(),
       body: JSON.stringify({ role })
@@ -1159,7 +1166,7 @@ export async function adminUpdateSettingsAPI(
   settings: Partial<AdminPaymentSettings>
 ): Promise<{ success: boolean; message?: string; settings?: AdminPaymentSettings; error?: string }> {
   try {
-    const res = await fetch('/api/admin/settings', {
+    const res = await fetch(apiUrl('/api/admin/settings'), {
       method: 'POST',
       headers: authJsonHeaders(),
       body: JSON.stringify(settings)
@@ -1176,7 +1183,7 @@ export async function adminUploadQRCodeAPI(
   dataUrl: string
 ): Promise<{ success: boolean; imageUrl?: string; message?: string; error?: string }> {
   try {
-    const res = await fetch('/api/admin/qr-upload', {
+    const res = await fetch(apiUrl('/api/admin/qr-upload'), {
       method: 'POST',
       headers: authJsonHeaders(),
       body: JSON.stringify({ dataUrl })
@@ -1195,7 +1202,7 @@ export async function adminBroadcastAnnouncementAPI(payload: {
   audience: 'all' | 'customers' | 'stalls';
 }): Promise<{ success: boolean; error?: string }> {
   try {
-    const res = await fetch('/api/admin/announcements', {
+    const res = await fetch(apiUrl('/api/admin/announcements'), {
       method: 'POST',
       headers: authJsonHeaders(),
       body: JSON.stringify(payload)
@@ -1214,7 +1221,7 @@ export async function fetchAdminAuditLogsAPI(): Promise<{
   error?: string;
 }> {
   try {
-    const res = await fetch('/api/admin/audit-logs', { headers: getAuthHeaders() });
+    const res = await fetch(apiUrl('/api/admin/audit-logs'), { headers: getAuthHeaders() });
     const data = await res.json();
     if (!res.ok) return { success: false, error: data.error };
     return { success: true, logs: data.logs || [] };
@@ -1250,7 +1257,7 @@ export async function fetchStallSalesAPI(
     if (endDate) params.set('endDate', endDate);
     if (recordType && recordType !== 'all') params.set('recordType', recordType);
 
-    const res = await fetch(`/api/sales/${encodeURIComponent(stallName)}?${params.toString()}`, {
+    const res = await fetch(apiUrl(`/api/sales/${encodeURIComponent(stallName)}?${params.toString()}`), {
       headers: getAuthHeaders()
     });
     const data = await res.json();
@@ -1291,7 +1298,7 @@ export async function saveSalesRecordAPI(payload: {
   overrideDuplicate?: boolean;
 }): Promise<SaveSalesRecordResult> {
   try {
-    const res = await fetch('/api/sales', {
+    const res = await fetch(apiUrl('/api/sales'), {
       method: 'POST',
       headers: authJsonHeaders(),
       body: JSON.stringify(payload)
@@ -1317,7 +1324,7 @@ export async function updateSalesRecordAPI(
   updates: Partial<SalesRecord>
 ): Promise<{ success: boolean; record?: SalesRecord; message?: string; error?: string }> {
   try {
-    const res = await fetch(`/api/sales/${id}`, {
+    const res = await fetch(apiUrl(`/api/sales/${id}`), {
       method: 'PUT',
       headers: authJsonHeaders(),
       body: JSON.stringify(updates)
@@ -1334,7 +1341,7 @@ export async function deleteSalesRecordAPI(
   id: string
 ): Promise<{ success: boolean; message?: string; error?: string }> {
   try {
-    const res = await fetch(`/api/sales/${id}`, {
+    const res = await fetch(apiUrl(`/api/sales/${id}`), {
       method: 'DELETE',
       headers: getAuthHeaders()
     });

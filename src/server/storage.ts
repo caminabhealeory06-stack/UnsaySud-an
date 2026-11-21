@@ -1,32 +1,66 @@
 import fs from "fs";
+import os from "os";
 import path from "path";
 
+export const IS_VERCEL = Boolean(process.env.VERCEL || process.env.VERCEL_ENV);
+
 function resolveAppRoot(): string {
-  const cwd = process.cwd();
-  if (
-    fs.existsSync(path.join(cwd, "package.json")) ||
-    fs.existsSync(path.join(cwd, "data"))
-  ) {
-    return cwd;
-  }
+  const candidates: string[] = [process.cwd()];
   if (typeof __dirname === "string") {
-    const parentDir = path.resolve(__dirname, "..");
+    candidates.push(
+      __dirname,
+      path.resolve(__dirname, ".."),
+      path.resolve(__dirname, "..", ".."),
+      path.resolve(__dirname, "..", "..", "..")
+    );
+  }
+  for (const dir of candidates) {
     if (
-      fs.existsSync(path.join(parentDir, "package.json")) ||
-      fs.existsSync(path.join(parentDir, "data"))
+      fs.existsSync(path.join(dir, "data", "menu_items.json")) ||
+      fs.existsSync(path.join(dir, "package.json"))
     ) {
-      return parentDir;
+      return dir;
     }
   }
-  return cwd;
+  return process.cwd();
 }
 
 export const APP_ROOT = resolveAppRoot();
-export const DATA_DIR = path.resolve(APP_ROOT, "data");
+export const SEED_DATA_DIR = path.resolve(APP_ROOT, "data");
 export const PUBLIC_DIR = path.resolve(APP_ROOT, "public");
+export const SEED_UPLOADS_DIR = path.join(PUBLIC_DIR, "uploads");
+
+export const DATA_DIR = IS_VERCEL
+  ? path.resolve(process.env.DATA_DIR || path.join(os.tmpdir(), "oursudan-data"))
+  : SEED_DATA_DIR;
+
 export const PRIVATE_PROOFS_DIR = path.join(DATA_DIR, "proofs");
-export const PUBLIC_DISH_UPLOADS_DIR = path.join(PUBLIC_DIR, "uploads", "dishes");
-export const PUBLIC_ADMIN_UPLOADS_DIR = path.join(PUBLIC_DIR, "uploads", "admin");
+
+export const RUNTIME_UPLOADS_DIR = IS_VERCEL
+  ? path.join(os.tmpdir(), "oursudan-uploads")
+  : SEED_UPLOADS_DIR;
+
+export const PUBLIC_DISH_UPLOADS_DIR = path.join(RUNTIME_UPLOADS_DIR, "dishes");
+export const PUBLIC_ADMIN_UPLOADS_DIR = path.join(RUNTIME_UPLOADS_DIR, "admin");
+
+function seedDirectoryIfMissing(sourceDir: string, targetDir: string) {
+  if (!fs.existsSync(sourceDir) || path.resolve(sourceDir) === path.resolve(targetDir)) {
+    return;
+  }
+  try {
+    const entries = fs.readdirSync(sourceDir, { withFileTypes: true });
+    for (const entry of entries) {
+      if (!entry.isFile() || entry.name === ".gitkeep") continue;
+      const srcPath = path.join(sourceDir, entry.name);
+      const dstPath = path.join(targetDir, entry.name);
+      if (!fs.existsSync(dstPath)) {
+        fs.copyFileSync(srcPath, dstPath);
+      }
+    }
+  } catch (err) {
+    console.warn(`Seed copy warning from ${sourceDir} to ${targetDir}:`, err);
+  }
+}
 
 export function ensureCoreDirectories() {
   [DATA_DIR, PRIVATE_PROOFS_DIR, PUBLIC_DISH_UPLOADS_DIR, PUBLIC_ADMIN_UPLOADS_DIR].forEach((dir) => {
@@ -34,6 +68,12 @@ export function ensureCoreDirectories() {
       fs.mkdirSync(dir, { recursive: true });
     }
   });
+
+  if (IS_VERCEL) {
+    seedDirectoryIfMissing(SEED_DATA_DIR, DATA_DIR);
+    seedDirectoryIfMissing(path.join(SEED_UPLOADS_DIR, "dishes"), PUBLIC_DISH_UPLOADS_DIR);
+    seedDirectoryIfMissing(path.join(SEED_UPLOADS_DIR, "admin"), PUBLIC_ADMIN_UPLOADS_DIR);
+  }
 }
 
 export function resolveSafePath(rootDir: string, ...segments: string[]): string {

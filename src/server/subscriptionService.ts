@@ -17,6 +17,7 @@ import {
 } from "../types";
 import {
   DATA_DIR,
+  IS_VERCEL,
   PRIVATE_PROOFS_DIR,
   PUBLIC_ADMIN_UPLOADS_DIR,
   ensureCoreDirectories,
@@ -521,7 +522,9 @@ export function checkAndExpireSubscriptionsAndSendReminders(): {
 }
 
 checkAndExpireSubscriptionsAndSendReminders();
-setInterval(checkAndExpireSubscriptionsAndSendReminders, 60 * 1000);
+if (!IS_VERCEL) {
+  setInterval(checkAndExpireSubscriptionsAndSendReminders, 60 * 1000);
+}
 
 // ============================================================================
 // 5. AUTHORITATIVE TRIAL & SUBSCRIPTION CALCULATOR
