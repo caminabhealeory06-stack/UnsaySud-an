@@ -17,12 +17,14 @@ import {
 } from "../types";
 import {
   DATA_DIR,
-  IS_VERCEL,
+  IS_EPHEMERAL_FS,
   PRIVATE_PROOFS_DIR,
   PUBLIC_ADMIN_UPLOADS_DIR,
   ensureCoreDirectories,
   readJsonFile,
   writeJsonFile,
+  writeBinaryFile,
+  ensureLocalFile,
   resolveSafePath
 } from "./storage";
 import {
@@ -522,7 +524,7 @@ export function checkAndExpireSubscriptionsAndSendReminders(): {
 }
 
 checkAndExpireSubscriptionsAndSendReminders();
-if (!IS_VERCEL) {
+if (!IS_EPHEMERAL_FS) {
   setInterval(checkAndExpireSubscriptionsAndSendReminders, 60 * 1000);
 }
 
@@ -1047,7 +1049,7 @@ export function registerSubscriptionRoutes(app: express.Express) {
 
           const filename = `proof_${paymentId.replace(/[^a-zA-Z0-9_-]/g, "")}_${Date.now()}.${ext}`;
           const targetPath = resolveSafePath(PRIVATE_PROOFS_DIR, filename);
-          fs.writeFileSync(targetPath, buffer);
+          writeBinaryFile(targetPath, buffer);
           savedStorageFile = filename;
         }
 
@@ -1199,7 +1201,7 @@ export function registerSubscriptionRoutes(app: express.Express) {
   app.get(
     "/api/payments/:paymentId/proof",
     requireAuth,
-    (req: AuthenticatedRequest, res) => {
+    async (req: AuthenticatedRequest, res) => {
       try {
         const payment = payments.find((p) => p.id === req.params.paymentId);
         if (!payment) {
@@ -1219,7 +1221,7 @@ export function registerSubscriptionRoutes(app: express.Express) {
         }
 
         const filePath = resolveSafePath(PRIVATE_PROOFS_DIR, path.basename(payment.proofStorageFile));
-        if (!fs.existsSync(filePath)) {
+        if (!(await ensureLocalFile(filePath))) {
           return res.status(404).json({ error: "Receipt file missing from private storage." });
         }
 
@@ -1840,7 +1842,7 @@ export function registerSubscriptionRoutes(app: express.Express) {
       const buffer = Buffer.from(matches[2], "base64");
       const filename = `official_payment_qr_${Date.now()}.${ext}`;
       const filePath = resolveSafePath(PUBLIC_ADMIN_UPLOADS_DIR, filename);
-      fs.writeFileSync(filePath, buffer);
+      writeBinaryFile(filePath, buffer);
 
       const persistentUrl = `/uploads/admin/${filename}`;
       const actor = req.user?.name || req.user?.username || "Administrator";
