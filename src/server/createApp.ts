@@ -14,8 +14,12 @@ import {
   ensureCoreDirectories,
   readJsonFile,
   writeJsonFile,
-  resolveSafePath
+  resolveSafePath,
+  writeBinaryFile,
+  deleteBinaryFile,
+  ensureLocalFile
 } from "./storage";
+import { durableWritesMiddleware } from "./persistence";
 import {
   getAdminBootstrapStatus,
   getAllUsersSafe,
@@ -228,6 +232,29 @@ export function createApiApp() {
 
   app.use(express.json({ limit: "25mb" }));
   app.use(express.urlencoded({ extended: true, limit: "25mb" }));
+  // Hold each response until its database/blob writes are durably committed (no-op locally).
+  app.use(durableWritesMiddleware);
+
+  // Restore uploaded files from durable storage after a cold start wiped the local disk.
+  const restoreRuntimeUpload: express.RequestHandler = (req, _res, next) => {
+    if (req.method !== "GET" && req.method !== "HEAD") return next();
+    let relative: string;
+    try {
+      relative = decodeURIComponent(req.path).replace(/^\/+/, "");
+    } catch {
+      return next();
+    }
+    if (!/^(dishes|admin)\/[^/]+$/.test(relative)) return next();
+    let target: string;
+    try {
+      target = resolveSafePath(RUNTIME_UPLOADS_DIR, relative);
+    } catch {
+      return next();
+    }
+    ensureLocalFile(target).then(() => next(), () => next());
+  };
+  app.use("/uploads", restoreRuntimeUpload);
+  app.use("/api/uploads", restoreRuntimeUpload);
 
   // Serve public dish/admin uploads (NOTE: payment proofs live in /data/proofs and are NEVER served publicly)
   app.use("/uploads", express.static(RUNTIME_UPLOADS_DIR));
@@ -1273,11 +1300,9 @@ export function createApiApp() {
             const oldFilename = path.basename(previousImageUrl.split("?")[0]);
             if (oldFilename) {
               const oldFilePath = resolveSafePath(PUBLIC_DISH_UPLOADS_DIR, oldFilename);
-              if (fs.existsSync(oldFilePath)) {
-                try {
-                  fs.unlinkSync(oldFilePath);
-                } catch {}
-              }
+              try {
+                deleteBinaryFile(oldFilePath);
+              } catch {}
             }
           }
 
@@ -1321,7 +1346,7 @@ export function createApiApp() {
         const imageId = `img_${stallSlug}_item_${item.id}_${timestamp}`;
         const targetFilePath = resolveSafePath(PUBLIC_DISH_UPLOADS_DIR, filename);
 
-        fs.writeFileSync(targetFilePath, buffer);
+        writeBinaryFile(targetFilePath, buffer);
         const persistentUrl = `/uploads/dishes/${filename}?v=${timestamp}`;
 
         const regRecord: OwnerImageRecord = {
@@ -1499,11 +1524,9 @@ export function createApiApp() {
           const filename = path.basename(item.ownerUploadedImage.split("?")[0]);
           if (filename) {
             const filePath = resolveSafePath(PUBLIC_DISH_UPLOADS_DIR, filename);
-            if (fs.existsSync(filePath)) {
-              try {
-                fs.unlinkSync(filePath);
-              } catch {}
-            }
+            try {
+              deleteBinaryFile(filePath);
+            } catch {}
           }
         }
 
@@ -1614,7 +1637,7 @@ export function createApiApp() {
               const stallSlug = item.stall.toLowerCase().replace(/[^a-z0-9]/g, "_").replace(/_+/g, "_");
               const filename = `stall_${stallSlug}_item_${item.id}_${timestamp}.${ext}`;
               const targetFilePath = resolveSafePath(PUBLIC_DISH_UPLOADS_DIR, filename);
-              fs.writeFileSync(targetFilePath, buffer);
+              writeBinaryFile(targetFilePath, buffer);
               const savedUrl = `/uploads/dishes/${filename}?v=${timestamp}`;
               item.ownerUploadedImage = savedUrl;
               item.imageUrl = savedUrl;
@@ -1676,7 +1699,7 @@ export function createApiApp() {
           storageId = filename;
           uploadTimestamp = timestamp;
           const targetFilePath = resolveSafePath(PUBLIC_DISH_UPLOADS_DIR, filename);
-          fs.writeFileSync(targetFilePath, buffer);
+          writeBinaryFile(targetFilePath, buffer);
           persistentImageUrl = `/uploads/dishes/${filename}?v=${timestamp}`;
 
           imageRegistry.images.push({
@@ -1825,7 +1848,7 @@ export function createApiApp() {
               const timestamp = Date.now();
               const filename = `stall_${stallSlug}_item_${itemId}_${timestamp}.${ext}`;
               const targetFilePath = resolveSafePath(PUBLIC_DISH_UPLOADS_DIR, filename);
-              fs.writeFileSync(targetFilePath, buffer);
+              writeBinaryFile(targetFilePath, buffer);
 
               const persistentUrl = `/uploads/dishes/${filename}?v=${timestamp}`;
               const newImageId = `img_${stallSlug}_item_${itemId}_${timestamp}`;
