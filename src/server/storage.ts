@@ -1,8 +1,29 @@
 import fs from "fs";
 import path from "path";
 
-export const DATA_DIR = path.resolve(process.cwd(), "data");
-export const PUBLIC_DIR = path.resolve(process.cwd(), "public");
+function resolveAppRoot(): string {
+  const cwd = process.cwd();
+  if (
+    fs.existsSync(path.join(cwd, "package.json")) ||
+    fs.existsSync(path.join(cwd, "data"))
+  ) {
+    return cwd;
+  }
+  if (typeof __dirname === "string") {
+    const parentDir = path.resolve(__dirname, "..");
+    if (
+      fs.existsSync(path.join(parentDir, "package.json")) ||
+      fs.existsSync(path.join(parentDir, "data"))
+    ) {
+      return parentDir;
+    }
+  }
+  return cwd;
+}
+
+export const APP_ROOT = resolveAppRoot();
+export const DATA_DIR = path.resolve(APP_ROOT, "data");
+export const PUBLIC_DIR = path.resolve(APP_ROOT, "public");
 export const PRIVATE_PROOFS_DIR = path.join(DATA_DIR, "proofs");
 export const PUBLIC_DISH_UPLOADS_DIR = path.join(PUBLIC_DIR, "uploads", "dishes");
 export const PUBLIC_ADMIN_UPLOADS_DIR = path.join(PUBLIC_DIR, "uploads", "admin");

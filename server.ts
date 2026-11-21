@@ -3,11 +3,12 @@ import express from "express";
 import path from "path";
 import fs from "fs";
 import crypto from "crypto";
-import { createServer as createViteServer } from "vite";
 import { initialMenuDatabase } from "./src/data/initialData";
 import { DishItem, SalesRecord, SalesItemEntry } from "./src/types";
 import {
+  APP_ROOT,
   DATA_DIR,
+  PUBLIC_DIR,
   PUBLIC_DISH_UPLOADS_DIR,
   ensureCoreDirectories,
   readJsonFile,
@@ -229,13 +230,13 @@ async function startServer() {
   app.use(express.urlencoded({ extended: true, limit: "25mb" }));
 
   // Serve public dish/admin uploads (NOTE: payment proofs live in /data/proofs and are NEVER served publicly)
-  const uploadsStaticPath = path.join(process.cwd(), "public", "uploads");
+  const uploadsStaticPath = path.join(PUBLIC_DIR, "uploads");
   app.use("/uploads", express.static(uploadsStaticPath));
   app.use("/uploads", (_req, res) => res.status(404).send("File not found"));
   app.use("/api/uploads", express.static(uploadsStaticPath));
   app.use("/api/uploads", (_req, res) => res.status(404).send("File not found"));
 
-  const assetsStaticPath = path.join(process.cwd(), "public", "assets");
+  const assetsStaticPath = path.join(PUBLIC_DIR, "assets");
   app.use("/assets", express.static(assetsStaticPath));
 
   app.get("/api/health", (_req, res) => {
@@ -2327,7 +2328,12 @@ async function startServer() {
     res.status(404).json({ success: false, error: "API endpoint not found." });
   });
 
-  if (process.env.NODE_ENV !== "production") {
+  const isBundledServer =
+    (typeof __filename === "string" && path.basename(__filename) === "server.cjs") ||
+    (process.argv[1] || "").endsWith("server.cjs");
+  const isProduction = process.env.NODE_ENV === "production" || isBundledServer;
+
+  if (!isProduction) {
     if (process.env.DISABLE_HMR === "true") {
       // Vite 8 injects /@vite/client in middlewareMode even when server.hmr is false,
       // which attempts a WebSocket connection to port 24678 and throws
@@ -2413,13 +2419,14 @@ export class ErrorOverlay extends BaseElement {
       });
     }
 
+    const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa"
     });
     app.use(vite.middlewares);
   } else {
-    const distPath = path.join(process.cwd(), "dist");
+    const distPath = path.join(APP_ROOT, "dist");
     app.use(express.static(distPath));
     app.get("*", (_req, res) => {
       res.sendFile(path.join(distPath, "index.html"));
